@@ -1,0 +1,48 @@
+name: watchdog
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_down:
+        description: "Пробный сбой"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/watchdog
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: watchdog-state
+          key: watchdog-state-${{ github.run_id }}
+          restore-keys: watchdog-state-
+
+      - id: check
+        run: bash .github/watchdog/check.sh
+        env:
+          PROD_HEALTH_URL: ${{ secrets.PROD_HEALTH_URL }}
+          WATCHDOG_BOT_TOKEN: ${{ secrets.WATCHDOG_BOT_TOKEN }}
+          WATCHDOG_CHAT_ID: ${{ secrets.WATCHDOG_CHAT_ID }}
+          SIMULATE_DOWN: ${{ inputs.simulate_down && '1' || '' }}
+          STATE_FILE: watchdog-state/state
+
+      - if: steps.check.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: watchdog-state
+          key: watchdog-state-${{ github.run_id }}-${{ github.run_attempt }}
